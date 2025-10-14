@@ -1,0 +1,23 @@
+{
+    "name": "lhduc/laravel-gcp-logging",
+    "description": "Reusable Google Cloud Logging integration for Laravel applications.",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Lhduc\\LaravelGcpLogging\\": "src/"
+        }
+    },
+    "require": {
+        "php": "^8.2",
+        "google/cloud-logging": "^1.32",
+        "laravel/framework": "^12"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Lhduc\\LaravelGcpLogging\\Providers\\GoogleLoggingServiceProvider"
+            ]
+        }
+    }
+}
