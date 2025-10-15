@@ -8,6 +8,14 @@ Reusable package that wires a Google Cloud Logging channel into Laravel, adds co
 composer require lhduc/laravel-gcp-logging
 ```
 
+### Publish configuration
+
+```bash
+php artisan vendor:publish --provider="Lhduc\LaravelGcpLogging\Providers\GoogleLoggingServiceProvider" --tag=config
+```
+
+Configure `config/google-logging.php` or the matching environment variables (`GOOGLE_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_APPLICATION_NAME`).
+
 ### Enable channel
 
 Update `config/logging.php`:
