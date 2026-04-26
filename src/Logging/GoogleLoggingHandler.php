@@ -21,6 +21,11 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
 
     protected ?FormatterInterface $formatter;
 
+    /** @var \Google\Cloud\Logging\Entry[] */
+    protected array $buffer = [];
+
+    protected bool $shutdownRegistered = false;
+
     public function __construct(GcpLogger $gcpLogger, $level = Level::Debug, bool $bubble = true)
     {
         parent::__construct($level, $bubble);
@@ -46,13 +51,62 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
         $data = is_string($formatted) ? ['message' => $formatted] : $formatted;
         $data = $this->truncateIfNeeded($data);
 
-        $entry = $this->gcpLogger->entry($data, [
+        $this->buffer[] = $this->gcpLogger->entry($data, [
             'timestamp' => $record['datetime'],
             'severity' => $record['level_name'],
             'resource' => ['type' => 'global'],
         ]);
 
-        $this->gcpLogger->write($entry);
+        $this->registerShutdown();
+    }
+
+    /**
+     * Flush all buffered entries to GCP in a single batch call.
+     *
+     * Wrapped in try/catch so GCP failures never break the application.
+     */
+    public function flush(): void
+    {
+        if (empty($this->buffer)) {
+            return;
+        }
+
+        $entries = $this->buffer;
+        $this->buffer = [];
+
+        try {
+            $this->gcpLogger->writeBatch($entries);
+        } catch (\Throwable $e) {
+            // Swallow – GCP logging must never break the application.
+            // Optionally log to stderr so ops can still spot issues:
+            error_log('[laravel-gcp-logging] Failed to flush log batch: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Called by Monolog when the handler is closed (e.g. on app termination).
+     */
+    public function close(): void
+    {
+        $this->flush();
+        parent::close();
+    }
+
+    /**
+     * Register a shutdown function to flush remaining entries.
+     *
+     * In PHP-FPM, shutdown functions run *after* the response has been sent,
+     * so this effectively makes GCP writes non-blocking for the client.
+     */
+    protected function registerShutdown(): void
+    {
+        if ($this->shutdownRegistered) {
+            return;
+        }
+
+        $this->shutdownRegistered = true;
+
+        register_shutdown_function([$this, 'flush']);
     }
 
     /**
