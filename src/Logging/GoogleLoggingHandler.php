@@ -17,6 +17,12 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
      */
     protected const MAX_LOG_BYTES = 204_800; // 200 KB
 
+    /**
+     * Auto-flush when buffer reaches this size.
+     * Prevents unbounded memory growth in long-running processes (queue workers, Octane).
+     */
+    protected const MAX_BUFFER_SIZE = 100;
+
     protected GcpLogger $gcpLogger;
 
     protected ?FormatterInterface $formatter;
@@ -56,6 +62,10 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
             'severity' => $record['level_name'],
             'resource' => ['type' => 'global'],
         ]);
+
+        if (count($this->buffer) >= self::MAX_BUFFER_SIZE) {
+            $this->flush();
+        }
 
         $this->registerShutdown();
     }
@@ -124,7 +134,8 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
      */
     protected function truncateIfNeeded(array $data): array
     {
-        if (strlen(json_encode($data)) <= self::MAX_LOG_BYTES) {
+        $encoded = json_encode($data);
+        if (strlen($encoded) <= self::MAX_LOG_BYTES) {
             return $data;
         }
 
@@ -140,14 +151,14 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
             $allowedLen = self::MAX_LOG_BYTES - $overhead - strlen(' [TRUNCATED]');
 
             if ($allowedLen > 0) {
-                $data['context'] = substr($contextJson, 0, $allowedLen) . ' [TRUNCATED]';
+                $data['context'] = mb_strcut($contextJson, 0, $allowedLen, 'UTF-8') . ' [TRUNCATED]';
             } else {
                 $data['context'] = '[CONTEXT_EXCEEDS_SIZE_LIMIT]';
             }
-        }
 
-        if (strlen(json_encode($data)) <= self::MAX_LOG_BYTES) {
-            return $data;
+            if (strlen(json_encode($data)) <= self::MAX_LOG_BYTES) {
+                return $data;
+            }
         }
 
         // Step 2 – context alone wasn't enough; drop it entirely.
@@ -161,7 +172,7 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
         if (isset($data['message']) && is_string($data['message'])) {
             $overhead   = strlen(json_encode(array_merge($data, ['message' => ''])));
             $allowedLen = self::MAX_LOG_BYTES - $overhead - strlen(' [TRUNCATED]');
-            $data['message'] = substr($data['message'], 0, max(0, $allowedLen)) . ' [TRUNCATED]';
+            $data['message'] = mb_strcut($data['message'], 0, max(0, $allowedLen), 'UTF-8') . ' [TRUNCATED]';
         }
 
         return $data;

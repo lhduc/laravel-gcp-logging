@@ -63,9 +63,9 @@ class RequestLoggingMiddleware
                 'tag' => 'Request',
                 'url' => $request->fullUrl(),
                 'status' => $status,
-                'request_headers' => json_encode($request->headers->all()),
-                'request_body' => json_encode($request->all()),
-                'response' => $responseData,
+                'request_headers' => $request->headers->all(),
+                'request_body' => $request->all(),
+                'response' => $this->parseJsonBody($responseData),
                 'error' => $exceptionMessage,
                 'duration' => $duration,
             ];
@@ -79,7 +79,24 @@ class RequestLoggingMiddleware
                 $logger->error($message, $data);
             }
 
-            $response->headers->set('X-Correlation-ID', $correlationId);
+            $response?->headers->set('X-Correlation-ID', $correlationId);
         }
+    }
+
+    /**
+     * Attempt to decode a JSON string into an array.
+     * Returns the original value if decoding fails.
+     *
+     * @return array|string|null
+     */
+    private function parseJsonBody(?string $body): array|string|null
+    {
+        if ($body === null || $body === '') {
+            return $body;
+        }
+
+        $decoded = json_decode($body, true);
+
+        return json_last_error() === JSON_ERROR_NONE ? $decoded : $body;
     }
 }
