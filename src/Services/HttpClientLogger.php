@@ -4,6 +4,7 @@ namespace Lhduc\LaravelGcpLogging\Services;
 
 use GuzzleHttp\TransferStats;
 use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\StreamInterface;
 
 class HttpClientLogger
 {
@@ -36,8 +37,8 @@ class HttpClientLogger
                 'url' => $url,
                 'status' => $status,
                 'request_headers' => $this->formatHeaders($request),
-                'request_body' => $this->truncateBody((string) $request->getBody()),
-                'response_body' => $this->truncateBody((string) $response->getBody()),
+                'request_body' => $this->parseJsonBody($this->truncateBody($this->safeReadBody($request->getBody()))),
+                'response_body' => $this->parseJsonBody($this->truncateBody($this->safeReadBody($response->getBody()))),
                 'transfer_time' => $stats->getTransferTime(),
             ];
 
@@ -55,13 +56,35 @@ class HttpClientLogger
         }
     }
 
-    private function formatHeaders(RequestInterface $request): string
+    private function formatHeaders(RequestInterface $request): array
     {
-        $headers = array_map(function ($values) {
+        return array_map(function ($values) {
             return implode(', ', $values);
         }, $request->getHeaders());
+    }
 
-        return json_encode($headers);
+    /**
+     * Attempt to decode a JSON string into an array.
+     * Returns the original string if decoding fails.
+     *
+     * @return array|string
+     */
+    private function parseJsonBody(string $body): array|string
+    {
+        $decoded = json_decode($body, true);
+
+        return json_last_error() === JSON_ERROR_NONE ? $decoded : $body;
+    }
+
+    private function safeReadBody(StreamInterface $body): string
+    {
+        $contents = (string) $body;
+
+        if ($body->isSeekable()) {
+            $body->rewind();
+        }
+
+        return $contents;
     }
 
     private function truncateBody(string $body): string
