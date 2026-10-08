@@ -7,9 +7,13 @@ use Monolog\LogRecord;
 
 class GoogleJsonFormatter extends NormalizerFormatter
 {
+    private const MAX_TRACE_FRAMES = 3;
+
+    private const MAX_MESSAGE_CHARS = 1000;
+
     public function format(LogRecord $record): array
     {
-        $context = $record['context'] ?? [];
+        $context = $record->context;
         $user = auth()->user() ?? null;
         $userId = $user?->id;
 
@@ -27,7 +31,7 @@ class GoogleJsonFormatter extends NormalizerFormatter
             'tag' => $context['tag'] ?? 'Other',
             'user_id' => $userId,
             'user_email' => $user?->email,
-            'message' => $record['message'],
+            'message' => $record->message,
             'context' => $this->expandThrowables($context),
         ];
     }
@@ -51,20 +55,44 @@ class GoogleJsonFormatter extends NormalizerFormatter
         return $value;
     }
 
-    private function throwableToArray(\Throwable $e, int $depth = 0): array
+    /**
+     * Compact exception: location + top frames only (previous exceptions are dropped), to keep entries far below GCP's size limit.
+     */
+    private function throwableToArray(\Throwable $e): array
     {
         $data = [
             'class' => get_class($e),
-            'message' => $e->getMessage(),
+            'message' => mb_strimwidth($e->getMessage(), 0, self::MAX_MESSAGE_CHARS, '...'),
             'code' => $e->getCode(),
-            'file' => $e->getFile() . ':' . $e->getLine(),
-            'trace' => $e->getTraceAsString(),
+            'file' => $this->relativePath($e->getFile()) . ':' . $e->getLine(),
         ];
 
-        if ($e->getPrevious() && $depth < 5) {
-            $data['previous'] = $this->throwableToArray($e->getPrevious(), $depth + 1);
-        }
+        $data['trace'] = $this->topFrames($e);
 
         return $data;
+    }
+
+    /**
+     * @return string[] e.g. "App\\Foo->bar (app/Foo.php:12)"
+     */
+    private function topFrames(\Throwable $e): array
+    {
+        $frames = [];
+
+        foreach (array_slice($e->getTrace(), 0, self::MAX_TRACE_FRAMES) as $frame) {
+            $call = ($frame['class'] ?? '') . ($frame['type'] ?? '') . ($frame['function'] ?? '');
+            $frames[] = isset($frame['file'])
+                ? "$call ({$this->relativePath($frame['file'])}:" . ($frame['line'] ?? 0) . ')'
+                : $call;
+        }
+
+        return $frames;
+    }
+
+    private function relativePath(string $path): string
+    {
+        $base = base_path() . DIRECTORY_SEPARATOR;
+
+        return str_starts_with($path, $base) ? substr($path, strlen($base)) : $path;
     }
 }

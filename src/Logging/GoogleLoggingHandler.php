@@ -25,8 +25,6 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
 
     protected GcpLogger $gcpLogger;
 
-    protected ?FormatterInterface $formatter;
-
     /** @var \Google\Cloud\Logging\Entry[] */
     protected array $buffer = [];
 
@@ -36,30 +34,22 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
     {
         parent::__construct($level, $bubble);
         $this->gcpLogger = $gcpLogger;
-        $this->formatter = new NormalizerFormatter();
     }
 
-    public function setFormatter(FormatterInterface $formatter): static
+    protected function getDefaultFormatter(): FormatterInterface
     {
-        $this->formatter = $formatter;
-
-        return $this;
-    }
-
-    public function getFormatter(): FormatterInterface
-    {
-        return $this->formatter;
+        return new NormalizerFormatter();
     }
 
     protected function write(LogRecord $record): void
     {
-        $formatted = $this->formatter->format($record);
+        $formatted = $this->getFormatter()->format($record);
         $data = is_string($formatted) ? ['message' => $formatted] : $formatted;
         $data = $this->truncateIfNeeded($this->sanitize($data));
 
         $this->buffer[] = $this->gcpLogger->entry($data, [
-            'timestamp' => $record['datetime'],
-            'severity' => $record['level_name'],
+            'timestamp' => $record->datetime,
+            'severity' => $record->level->getName(),
             'resource' => ['type' => 'global'],
         ]);
 

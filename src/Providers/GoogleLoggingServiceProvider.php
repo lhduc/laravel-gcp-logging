@@ -51,7 +51,7 @@ class GoogleLoggingServiceProvider extends ServiceProvider
         $this->app['log']->extend('google', function ($app, array $config) {
             $provider = $app->make(GoogleLogger::class);
 
-            return $provider(array_merge(config('google-logging'), $config));
+            return $provider($config);
         });
     }
 
@@ -144,7 +144,7 @@ class GoogleLoggingServiceProvider extends ServiceProvider
                     'connection' => $event->connectionName,
                     'payload' => $event->job->getRawBody(),
                     'error' => $event->exception->getMessage(),
-                    'trace' => $event->exception->getTraceAsString(),
+                    'exception' => $event->exception,
                 ]);
             } catch (\Throwable $e) {
                 // Logging must never break job processing.
