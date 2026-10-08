@@ -48,14 +48,6 @@ class HttpClientLogger
         }
     }
 
-    public function addCorrelationIdHeader($request): void
-    {
-        $correlationId = app()->bound('correlation_id') ? app('correlation_id') : null;
-        if ($correlationId) {
-            $request->withHeaders(['X-Correlation-ID' => $correlationId]);
-        }
-    }
-
     private function formatHeaders(RequestInterface $request): array
     {
         return array_map(function ($values) {

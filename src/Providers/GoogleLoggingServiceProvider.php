@@ -76,7 +76,11 @@ class GoogleLoggingServiceProvider extends ServiceProvider
             'on_stats' => fn ($stats) => $logger->logRequest($stats),
         ]);
 
-        Http::beforeSending(fn ($request) => $logger->addCorrelationIdHeader($request));
+        Http::globalRequestMiddleware(function ($request) {
+            $correlationId = app()->bound('correlation_id') ? app('correlation_id') : null;
+
+            return $correlationId ? $request->withHeader('X-Correlation-ID', $correlationId) : $request;
+        });
     }
 
     private function registerQueueCorrelationId(): void
@@ -88,9 +92,12 @@ class GoogleLoggingServiceProvider extends ServiceProvider
         });
 
         Queue::before(function (JobProcessing $event) {
+            // Always reset so a job without a correlation id never inherits the previous job's id.
             $cid = $event->job->payload()['correlation_id'] ?? null;
             if ($cid) {
                 app()->instance('correlation_id', $cid);
+            } else {
+                app()->forgetInstance('correlation_id');
             }
         });
     }
@@ -98,37 +105,45 @@ class GoogleLoggingServiceProvider extends ServiceProvider
     private function registerQueueEventLogging(): void
     {
         Event::listen(JobProcessed::class, function (JobProcessed $event) {
-            $payload = $event->job->payload();
-            $cid = $payload['correlation_id'] ?? ($payload['uuid'] ?? '');
-            $message = "[$cid] SUCCESS {$event->job->resolveName()}";
+            try {
+                $payload = $event->job->payload();
+                $cid = $payload['correlation_id'] ?? ($payload['uuid'] ?? '');
+                $message = "[$cid] SUCCESS {$event->job->resolveName()}";
 
-            logger()->channel('google')->info($message, [
-                'correlation_id' => $cid,
-                'tag' => 'Job',
-                'status' => 'success',
-                'job' => $event->job->resolveName(),
-                'queue' => $event->job->getQueue(),
-                'connection' => $event->connectionName,
-                'payload' => $event->job->getRawBody(),
-            ]);
+                logger()->channel('google')->info($message, [
+                    'correlation_id' => $cid,
+                    'tag' => 'Job',
+                    'status' => 'success',
+                    'job' => $event->job->resolveName(),
+                    'queue' => $event->job->getQueue(),
+                    'connection' => $event->connectionName,
+                    'payload' => $event->job->getRawBody(),
+                ]);
+            } catch (\Throwable $e) {
+                // Logging must never break job processing.
+            }
         });
 
         Event::listen(JobFailed::class, function (JobFailed $event) {
-            $payload = $event->job->payload();
-            $cid = $payload['correlation_id'] ?? ($payload['uuid'] ?? '');
-            $message = "[$cid] FAILED {$event->job->resolveName()}";
+            try {
+                $payload = $event->job->payload();
+                $cid = $payload['correlation_id'] ?? ($payload['uuid'] ?? '');
+                $message = "[$cid] FAILED {$event->job->resolveName()}";
 
-            logger()->channel('google')->error($message, [
-                'correlation_id' => $cid,
-                'tag' => 'Job',
-                'status' => 'failed',
-                'job' => $event->job->resolveName(),
-                'queue' => $event->job->getQueue(),
-                'connection' => $event->connectionName,
-                'payload' => $event->job->getRawBody(),
-                'error' => $event->exception->getMessage(),
-                'trace' => $event->exception->getTraceAsString(),
-            ]);
+                logger()->channel('google')->error($message, [
+                    'correlation_id' => $cid,
+                    'tag' => 'Job',
+                    'status' => 'failed',
+                    'job' => $event->job->resolveName(),
+                    'queue' => $event->job->getQueue(),
+                    'connection' => $event->connectionName,
+                    'payload' => $event->job->getRawBody(),
+                    'error' => $event->exception->getMessage(),
+                    'trace' => $event->exception->getTraceAsString(),
+                ]);
+            } catch (\Throwable $e) {
+                // Logging must never break job processing.
+            }
         });
     }
 }
