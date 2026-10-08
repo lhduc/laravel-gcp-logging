@@ -2,7 +2,6 @@
 
 namespace Lhduc\LaravelGcpLogging\Providers;
 
-use Illuminate\Contracts\Container\Container;
 use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
@@ -21,10 +20,6 @@ class GoogleLoggingServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/../../config/google-logging.php', 'google-logging');
-
-        $this->app->singleton(GoogleLogger::class, function (Container $app) {
-            return new GoogleLogger();
-        });
     }
 
     public function boot(): void
@@ -49,9 +44,7 @@ class GoogleLoggingServiceProvider extends ServiceProvider
     private function extendLoggingChannel(): void
     {
         $this->app['log']->extend('google', function ($app, array $config) {
-            $provider = $app->make(GoogleLogger::class);
-
-            return $provider($config);
+            return (new GoogleLogger())($config);
         });
     }
 

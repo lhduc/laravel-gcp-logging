@@ -3,8 +3,8 @@
 namespace Lhduc\LaravelGcpLogging\Services;
 
 use GuzzleHttp\TransferStats;
-use Psr\Http\Message\RequestInterface;
 use Lhduc\LaravelGcpLogging\Support\WritesHttpLogs;
+use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\StreamInterface;
 
 class HttpClientLogger
