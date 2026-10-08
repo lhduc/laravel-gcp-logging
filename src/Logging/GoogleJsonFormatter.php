@@ -9,6 +9,10 @@ class GoogleJsonFormatter extends NormalizerFormatter
 {
     private const MAX_TRACE_FRAMES = 3;
 
+    private const MAX_PREVIOUS_TRACE_FRAMES = 1;
+
+    private const MAX_PREVIOUS_DEPTH = 2;
+
     private const MAX_MESSAGE_CHARS = 1000;
 
     public function format(LogRecord $record): array
@@ -56,9 +60,9 @@ class GoogleJsonFormatter extends NormalizerFormatter
     }
 
     /**
-     * Compact exception: location + top frames only (previous exceptions are dropped), to keep entries far below GCP's size limit.
+     * Compact exception: location + top frames only (previous exceptions get a shorter trace), to keep entries far below GCP's size limit.
      */
-    private function throwableToArray(\Throwable $e): array
+    private function throwableToArray(\Throwable $e, int $depth = 0): array
     {
         $data = [
             'class' => get_class($e),
@@ -67,7 +71,14 @@ class GoogleJsonFormatter extends NormalizerFormatter
             'file' => $this->relativePath($e->getFile()) . ':' . $e->getLine(),
         ];
 
-        $data['trace'] = $this->topFrames($e);
+        $data['trace'] = $this->topFrames(
+            $e,
+            $depth === 0 ? self::MAX_TRACE_FRAMES : self::MAX_PREVIOUS_TRACE_FRAMES
+        );
+
+        if ($e->getPrevious() && $depth < self::MAX_PREVIOUS_DEPTH) {
+            $data['previous'] = $this->throwableToArray($e->getPrevious(), $depth + 1);
+        }
 
         return $data;
     }
@@ -75,11 +86,11 @@ class GoogleJsonFormatter extends NormalizerFormatter
     /**
      * @return string[] e.g. "App\\Foo->bar (app/Foo.php:12)"
      */
-    private function topFrames(\Throwable $e): array
+    private function topFrames(\Throwable $e, int $limit): array
     {
         $frames = [];
 
-        foreach (array_slice($e->getTrace(), 0, self::MAX_TRACE_FRAMES) as $frame) {
+        foreach (array_slice($e->getTrace(), 0, $limit) as $frame) {
             $call = ($frame['class'] ?? '') . ($frame['type'] ?? '') . ($frame['function'] ?? '');
             $frames[] = isset($frame['file'])
                 ? "$call ({$this->relativePath($frame['file'])}:" . ($frame['line'] ?? 0) . ')'
