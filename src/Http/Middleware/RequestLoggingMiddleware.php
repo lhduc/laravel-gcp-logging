@@ -5,9 +5,12 @@ namespace Lhduc\LaravelGcpLogging\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Lhduc\LaravelGcpLogging\Support\WritesHttpLogs;
 
 class RequestLoggingMiddleware
 {
+    use WritesHttpLogs;
+
     /**
      * @throws \Throwable
      */
@@ -71,36 +74,12 @@ class RequestLoggingMiddleware
             ];
 
             try {
-                $logger = logger()->channel('google');
-                if ($status >= 200 && $status < 300) {
-                    $logger->info($message, $data);
-                } elseif ($status >= 400 && $status < 500) {
-                    $logger->warning($message, $data);
-                } elseif ($status >= 500) {
-                    $logger->error($message, $data);
-                }
+                $this->logByStatus($status, $message, $data);
             } catch (\Throwable $e) {
                 // Logging must never break the response.
             }
 
             $response?->headers->set('X-Correlation-ID', $correlationId);
         }
-    }
-
-    /**
-     * Attempt to decode a JSON string into an array.
-     * Returns the original value if decoding fails.
-     *
-     * @return array|string|null
-     */
-    private function parseJsonBody(?string $body): array|string|null
-    {
-        if ($body === null || $body === '') {
-            return $body;
-        }
-
-        $decoded = json_decode($body, true);
-
-        return json_last_error() === JSON_ERROR_NONE ? $decoded : $body;
     }
 }

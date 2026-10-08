@@ -13,7 +13,7 @@ class GoogleJsonFormatter extends NormalizerFormatter
 
     public function format(LogRecord $record): array
     {
-        $context = $record['context'] ?? [];
+        $context = $record->context;
         $user = auth()->user() ?? null;
         $userId = $user?->id;
 
@@ -31,7 +31,7 @@ class GoogleJsonFormatter extends NormalizerFormatter
             'tag' => $context['tag'] ?? 'Other',
             'user_id' => $userId,
             'user_email' => $user?->email,
-            'message' => $record['message'],
+            'message' => $record->message,
             'context' => $this->expandThrowables($context),
         ];
     }

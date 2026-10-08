@@ -4,10 +4,13 @@ namespace Lhduc\LaravelGcpLogging\Services;
 
 use GuzzleHttp\TransferStats;
 use Psr\Http\Message\RequestInterface;
+use Lhduc\LaravelGcpLogging\Support\WritesHttpLogs;
 use Psr\Http\Message\StreamInterface;
 
 class HttpClientLogger
 {
+    use WritesHttpLogs;
+
     private const MAX_BODY_SIZE = 50000; // keep payloads manageable
 
     public function logRequest(TransferStats $stats): void
@@ -37,12 +40,12 @@ class HttpClientLogger
                 'url' => $url,
                 'status' => $status,
                 'request_headers' => $this->formatHeaders($request),
-                'request_body' => $this->parseJsonBody($this->truncateBody($this->safeReadBody($request->getBody()))),
-                'response_body' => $this->parseJsonBody($this->truncateBody($this->safeReadBody($response->getBody()))),
+                'request_body' => $this->parseJsonBody($this->readBody($request->getBody())),
+                'response_body' => $this->parseJsonBody($this->readBody($response->getBody())),
                 'transfer_time' => $stats->getTransferTime(),
             ];
 
-            $this->log($status, $message, $data);
+            $this->logByStatus($status, $message, $data);
         } catch (\Throwable $e) {
             // swallow exceptions; logging should not break requests
         }
@@ -56,48 +59,23 @@ class HttpClientLogger
     }
 
     /**
-     * Attempt to decode a JSON string into an array.
-     * Returns the original string if decoding fails.
-     *
-     * @return array|string
+     * Read at most MAX_BODY_SIZE bytes (without loading huge bodies into memory)
+     * and leave the stream rewound for the caller.
      */
-    private function parseJsonBody(string $body): array|string
+    private function readBody(StreamInterface $body): string
     {
-        $decoded = json_decode($body, true);
-
-        return json_last_error() === JSON_ERROR_NONE ? $decoded : $body;
-    }
-
-    private function safeReadBody(StreamInterface $body): string
-    {
-        $contents = (string) $body;
-
         if ($body->isSeekable()) {
             $body->rewind();
+            $contents = $body->read(self::MAX_BODY_SIZE + 1);
+            $body->rewind();
+        } else {
+            $contents = (string) $body;
+        }
+
+        if (strlen($contents) > self::MAX_BODY_SIZE) {
+            return mb_strcut($contents, 0, self::MAX_BODY_SIZE, 'UTF-8') . ' [TRUNCATED]';
         }
 
         return $contents;
-    }
-
-    private function truncateBody(string $body): string
-    {
-        if (strlen($body) > self::MAX_BODY_SIZE) {
-            return substr($body, 0, self::MAX_BODY_SIZE) . ' [TRUNCATED]';
-        }
-
-        return $body;
-    }
-
-    private function log(int $status, string $message, array $data): void
-    {
-        $logger = logger()->channel('google');
-
-        if ($status >= 200 && $status < 300) {
-            $logger->info($message, $data);
-        } elseif ($status >= 400 && $status < 500) {
-            $logger->warning($message, $data);
-        } elseif ($status >= 500) {
-            $logger->error($message, $data);
-        }
     }
 }

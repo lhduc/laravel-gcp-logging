@@ -51,7 +51,7 @@ class GoogleLoggingServiceProvider extends ServiceProvider
         $this->app['log']->extend('google', function ($app, array $config) {
             $provider = $app->make(GoogleLogger::class);
 
-            return $provider(array_merge(config('google-logging'), $config));
+            return $provider($config);
         });
     }
 
