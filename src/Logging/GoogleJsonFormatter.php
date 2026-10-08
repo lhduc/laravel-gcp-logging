@@ -18,7 +18,7 @@ class GoogleJsonFormatter extends NormalizerFormatter
     public function format(LogRecord $record): array
     {
         $context = $record->context;
-        $user = auth()->user() ?? null;
+        $user = $this->resolvedUser();
         $userId = $user?->id;
 
         if (empty($userId)) {
@@ -38,6 +38,21 @@ class GoogleJsonFormatter extends NormalizerFormatter
             'message' => $record->message,
             'context' => $this->expandThrowables($context),
         ];
+    }
+
+    /**
+     * Only read a user that is already resolved. Never trigger a session/token/DB lookup
+     * from inside the logger (it would add queries and throw when the DB is down).
+     */
+    private function resolvedUser(): ?object
+    {
+        try {
+            $guard = auth();
+
+            return $guard->hasUser() ? $guard->user() : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
