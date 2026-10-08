@@ -144,7 +144,7 @@ class GoogleLoggingServiceProvider extends ServiceProvider
                     'connection' => $event->connectionName,
                     'payload' => $event->job->getRawBody(),
                     'error' => $event->exception->getMessage(),
-                    'trace' => $event->exception->getTraceAsString(),
+                    'exception' => $event->exception,
                 ]);
             } catch (\Throwable $e) {
                 // Logging must never break job processing.
