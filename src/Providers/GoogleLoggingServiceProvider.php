@@ -3,6 +3,7 @@
 namespace Lhduc\LaravelGcpLogging\Providers;
 
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Queue\Events\JobExceptionOccurred;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
@@ -12,6 +13,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\ServiceProvider;
 use Lhduc\LaravelGcpLogging\Http\Middleware\RequestLoggingMiddleware;
 use Lhduc\LaravelGcpLogging\Logging\GoogleLogger;
+use Lhduc\LaravelGcpLogging\Logging\GoogleLoggingHandler;
 use Lhduc\LaravelGcpLogging\Services\HttpClientLogger;
 
 class GoogleLoggingServiceProvider extends ServiceProvider
@@ -41,6 +43,7 @@ class GoogleLoggingServiceProvider extends ServiceProvider
         $this->registerHttpClientLogging();
         $this->registerQueueCorrelationId();
         $this->registerQueueEventLogging();
+        $this->registerLongRunningFlush();
     }
 
     private function extendLoggingChannel(): void
@@ -122,6 +125,8 @@ class GoogleLoggingServiceProvider extends ServiceProvider
             } catch (\Throwable $e) {
                 // Logging must never break job processing.
             }
+
+            $this->flushLogs();
         });
 
         Event::listen(JobFailed::class, function (JobFailed $event) {
@@ -144,6 +149,33 @@ class GoogleLoggingServiceProvider extends ServiceProvider
             } catch (\Throwable $e) {
                 // Logging must never break job processing.
             }
+
+            $this->flushLogs();
         });
+    }
+
+    /**
+     * Long-running processes (queue workers, Octane) never reach PHP shutdown between
+     * units of work, so push buffered entries to GCP at the end of each job/request.
+     */
+    private function registerLongRunningFlush(): void
+    {
+        Event::listen(JobExceptionOccurred::class, fn () => $this->flushLogs());
+
+        // String class name: Octane is optional, listening on a missing class is harmless.
+        Event::listen('Laravel\\Octane\\Events\\RequestTerminated', fn () => $this->flushLogs());
+    }
+
+    private function flushLogs(): void
+    {
+        try {
+            foreach (logger()->channel('google')->getLogger()->getHandlers() as $handler) {
+                if ($handler instanceof GoogleLoggingHandler) {
+                    $handler->flush();
+                }
+            }
+        } catch (\Throwable $e) {
+            // Flushing must never break the application.
+        }
     }
 }
