@@ -12,6 +12,8 @@ class RequestLoggingMiddlewareTest extends TestCase
             Route::get('api/ping', fn () => ['ok' => true]);
             Route::get('api/health', fn () => 'ok');
             Route::get('api/health/deep', fn () => 'ok');
+            Route::get('api/big', fn () => response(str_repeat('é', 40_000)));
+            Route::post('api/upload', fn () => ['ok' => true]);
             Route::get('api/fail', fn () => response(['error' => 'x'], 422));
         });
 
@@ -65,5 +67,26 @@ class RequestLoggingMiddlewareTest extends TestCase
         config(['logging.channels.google.handler' => \Lhduc\LaravelGcpLogging\Tests\ThrowingHandler::class]);
 
         $this->getJson('api/ping')->assertOk();
+    }
+
+    public function test_large_response_is_truncated_on_a_utf8_boundary(): void
+    {
+        $this->get('api/big')->assertOk();
+
+        $response = $this->googleRecords()[0]->context['response'];
+        $this->assertStringEndsWith(' [TRUNCATED]', $response);
+        $this->assertTrue(mb_check_encoding($response, 'UTF-8'));
+        $this->assertLessThanOrEqual(50_000 + strlen(' [TRUNCATED]'), strlen($response));
+    }
+
+    public function test_large_request_body_is_truncated_but_small_stays_structured(): void
+    {
+        $this->postJson('api/upload', ['note' => str_repeat('x', 60_000)])->assertOk();
+        $this->postJson('api/upload', ['note' => 'short'])->assertOk();
+
+        $records = $this->googleRecords();
+        $this->assertIsString($records[0]->context['request_body']);
+        $this->assertStringEndsWith(' [TRUNCATED]', $records[0]->context['request_body']);
+        $this->assertSame(['note' => 'short'], $records[1]->context['request_body']);
     }
 }

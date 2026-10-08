@@ -11,8 +11,6 @@ class HttpClientLogger
 {
     use WritesHttpLogs;
 
-    private const MAX_BODY_SIZE = 50000; // keep payloads manageable
-
     public function logRequest(TransferStats $stats): void
     {
         try {
@@ -59,23 +57,19 @@ class HttpClientLogger
     }
 
     /**
-     * Read at most MAX_BODY_SIZE bytes (without loading huge bodies into memory)
+     * Read at most MAX_BODY_BYTES bytes (without loading huge bodies into memory)
      * and leave the stream rewound for the caller.
      */
     private function readBody(StreamInterface $body): string
     {
         if ($body->isSeekable()) {
             $body->rewind();
-            $contents = $body->read(self::MAX_BODY_SIZE + 1);
+            $contents = $body->read(self::MAX_BODY_BYTES + 1);
             $body->rewind();
         } else {
             $contents = (string) $body;
         }
 
-        if (strlen($contents) > self::MAX_BODY_SIZE) {
-            return mb_strcut($contents, 0, self::MAX_BODY_SIZE, 'UTF-8') . ' [TRUNCATED]';
-        }
-
-        return $contents;
+        return $this->limitText($contents);
     }
 }
