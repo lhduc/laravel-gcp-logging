@@ -70,13 +70,17 @@ class RequestLoggingMiddleware
                 'duration' => $duration,
             ];
 
-            $logger = logger()->channel('google');
-            if ($status >= 200 && $status < 300) {
-                $logger->info($message, $data);
-            } elseif ($status >= 400 && $status < 500) {
-                $logger->warning($message, $data);
-            } elseif ($status >= 500) {
-                $logger->error($message, $data);
+            try {
+                $logger = logger()->channel('google');
+                if ($status >= 200 && $status < 300) {
+                    $logger->info($message, $data);
+                } elseif ($status >= 400 && $status < 500) {
+                    $logger->warning($message, $data);
+                } elseif ($status >= 500) {
+                    $logger->error($message, $data);
+                }
+            } catch (\Throwable $e) {
+                // Logging must never break the response.
             }
 
             $response?->headers->set('X-Correlation-ID', $correlationId);

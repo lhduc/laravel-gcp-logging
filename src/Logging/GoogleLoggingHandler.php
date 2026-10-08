@@ -55,7 +55,7 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
     {
         $formatted = $this->formatter->format($record);
         $data = is_string($formatted) ? ['message' => $formatted] : $formatted;
-        $data = $this->truncateIfNeeded($data);
+        $data = $this->truncateIfNeeded($this->sanitize($data));
 
         $this->buffer[] = $this->gcpLogger->entry($data, [
             'timestamp' => $record['datetime'],
@@ -88,8 +88,16 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
             $this->gcpLogger->writeBatch($entries);
         } catch (\Throwable $e) {
             // Swallow – GCP logging must never break the application.
-            // Optionally log to stderr so ops can still spot issues:
             error_log('[laravel-gcp-logging] Failed to flush log batch: ' . $e->getMessage());
+
+            // Retry one by one so a single bad entry doesn't drop the valid ones.
+            foreach ($entries as $entry) {
+                try {
+                    $this->gcpLogger->writeBatch([$entry]);
+                } catch (\Throwable $e) {
+                    error_log('[laravel-gcp-logging] Dropped log entry: ' . $e->getMessage());
+                }
+            }
         }
     }
 
@@ -117,6 +125,21 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
         $this->shutdownRegistered = true;
 
         register_shutdown_function([$this, 'flush']);
+    }
+
+    /**
+     * Make the payload always JSON-encodable: invalid UTF-8 is substituted,
+     * NAN/INF and circular references are replaced instead of failing the encode.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function sanitize(array $data): array
+    {
+        $json = json_encode($data, JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+        $decoded = $json === false ? null : json_decode($json, true);
+
+        return is_array($decoded) ? $decoded : ['message' => '[UNENCODABLE_LOG_ENTRY]'];
     }
 
     /**
