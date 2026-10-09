@@ -46,17 +46,24 @@ class RequestLoggingMiddleware
 
         $responseData = null;
         $exceptionMessage = null;
+        $exception = null;
         $response = null;
 
         try {
             $response = $next($request);
             $status = $response->getStatusCode();
             $responseData = $this->limitText((string) $response->getContent());
+
+            // The pipeline turns exceptions into a response before they reach `catch`,
+            // but keeps the original on the response.
+            $exception = $response->exception ?? null;
+            $exceptionMessage = $exception?->getMessage();
             $duration = (microtime(true) - $start) * 1000;
 
             return $response;
         } catch (\Throwable $e) {
             $status = 500;
+            $exception = $e;
             $exceptionMessage = $e->getMessage();
             $duration = (microtime(true) - $start) * 1000;
             throw $e;
@@ -73,6 +80,10 @@ class RequestLoggingMiddleware
                 'error' => $exceptionMessage,
                 'duration' => $duration,
             ];
+
+            if ($exception) {
+                $data['exception'] = $exception;
+            }
 
             try {
                 $this->logByStatus($status, $message, $data);

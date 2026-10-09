@@ -26,16 +26,31 @@ class GoogleJsonFormatterTest extends TestCase
         $this->assertLessThanOrEqual(3, count($exception['trace']));
     }
 
-    public function test_previous_is_kept_with_shorter_trace_and_capped_depth(): void
+    public function test_previous_is_kept_with_shorter_trace(): void
     {
-        $e = new \RuntimeException('a', 0, new \LogicException('b', 0, new \Exception('c', 0, new \Exception('d'))));
+        $e = new \RuntimeException('a', 0, new \LogicException('b', 0, new \Exception('c')));
 
         $exception = $this->format(['exception' => $e])['context']['exception'];
 
         $this->assertSame('b', $exception['previous']['message']);
         $this->assertLessThanOrEqual(1, count($exception['previous']['trace']));
         $this->assertSame('c', $exception['previous']['previous']['message']);
-        $this->assertArrayNotHasKey('previous', $exception['previous']['previous']);
+        $this->assertArrayNotHasKey('skipped', $exception['previous']['previous']);
+    }
+
+    public function test_long_chain_keeps_the_root_cause_and_counts_skipped_links(): void
+    {
+        $root = new \DomainException('root cause');
+        $e = new \RuntimeException('a', 0, new \LogicException('b', 0, new \Exception('c', 0, new \Exception('d', 0, $root))));
+
+        $exception = $this->format(['exception' => $e])['context']['exception'];
+
+        $this->assertSame('b', $exception['previous']['message']);
+        $last = $exception['previous']['previous'];
+        $this->assertSame('root cause', $last['message']);
+        $this->assertSame(\DomainException::class, $last['class']);
+        $this->assertSame(2, $last['skipped']);
+        $this->assertArrayNotHasKey('previous', $last);
     }
 
     public function test_long_exception_message_is_truncated(): void

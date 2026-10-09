@@ -75,4 +75,31 @@ class HttpClientLoggerTest extends TestCase
 
         Http::assertSent(fn ($request) => ! $request->hasHeader('X-Correlation-ID'));
     }
+
+    public function test_requests_without_a_response_are_logged_as_errors(): void
+    {
+        app()->instance('correlation_id', 'cid-13');
+
+        $stats = new TransferStats(
+            new Request('GET', 'http://example.test/pay'),
+            null,
+            0.5,
+            new \RuntimeException('cURL error 28: Operation timed out')
+        );
+        (new HttpClientLogger())->logRequest($stats);
+
+        $records = $this->googleRecords();
+        $this->assertCount(1, $records);
+        $this->assertSame('ERROR', $records[0]->level->getName());
+        $this->assertStringContainsString('FAILED GET http://example.test/pay', $records[0]->message);
+        $this->assertSame('cURL error 28: Operation timed out', $records[0]->context['error']);
+        $this->assertNull($records[0]->context['status']);
+    }
+
+    public function test_failures_without_a_correlation_id_are_not_logged(): void
+    {
+        (new HttpClientLogger())->logRequest(new TransferStats(new Request('GET', 'http://example.test/x'), null, 0.1, 'boom'));
+
+        $this->assertCount(0, $this->googleRecords());
+    }
 }

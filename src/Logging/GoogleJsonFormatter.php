@@ -89,11 +89,34 @@ class GoogleJsonFormatter extends NormalizerFormatter
             $depth === 0 ? self::MAX_TRACE_FRAMES : self::MAX_PREVIOUS_TRACE_FRAMES
         );
 
-        if ($e->getPrevious() && $depth < self::MAX_PREVIOUS_DEPTH) {
-            $data['previous'] = $this->throwableToArray($e->getPrevious(), $depth + 1);
+        if ($previous = $e->getPrevious()) {
+            if ($depth + 1 < self::MAX_PREVIOUS_DEPTH) {
+                $data['previous'] = $this->throwableToArray($previous, $depth + 1);
+            } else {
+                // Last allowed level: show the root cause (the exception that started the chain)
+                // instead of the next link, and say how many were left out.
+                [$root, $skipped] = $this->rootCause($previous);
+                $data['previous'] = $this->throwableToArray($root, self::MAX_PREVIOUS_DEPTH)
+                    + ($skipped > 0 ? ['skipped' => $skipped] : []);
+            }
         }
 
         return $data;
+    }
+
+    /**
+     * @return array{0: \Throwable, 1: int} deepest previous exception and how many were passed over
+     */
+    private function rootCause(\Throwable $e): array
+    {
+        $skipped = 0;
+
+        while ($e->getPrevious()) {
+            $e = $e->getPrevious();
+            $skipped++;
+        }
+
+        return [$e, $skipped];
     }
 
     /**
