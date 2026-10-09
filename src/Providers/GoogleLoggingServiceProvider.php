@@ -68,9 +68,21 @@ class GoogleLoggingServiceProvider extends ServiceProvider
     {
         $logger = new HttpClientLogger();
 
-        Http::globalOptions([
-            'on_stats' => fn ($stats) => $logger->logRequest($stats),
-        ]);
+        // Middleware instead of Http::globalOptions(): globalOptions replaces the whole array,
+        // so it would drop the app's own global options (or be dropped by them).
+        Http::globalMiddleware(fn (callable $handler) => function ($request, array $options) use ($handler, $logger) {
+            $original = $options['on_stats'] ?? null;
+
+            $options['on_stats'] = function ($stats) use ($original, $logger) {
+                if (is_callable($original)) {
+                    $original($stats);
+                }
+
+                $logger->logRequest($stats);
+            };
+
+            return $handler($request, $options);
+        });
 
         Http::globalRequestMiddleware(function ($request) {
             $correlationId = app()->bound('correlation_id') ? app('correlation_id') : null;
