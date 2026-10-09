@@ -6,6 +6,7 @@ use Google\Cloud\Logging\Logger as GcpLogger;
 use Monolog\Formatter\FormatterInterface;
 use Monolog\Formatter\NormalizerFormatter;
 use Monolog\Handler\AbstractProcessingHandler;
+use Lhduc\LaravelGcpLogging\Support\Redactor;
 use Monolog\Level;
 use Monolog\LogRecord;
 
@@ -30,10 +31,13 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
 
     protected bool $shutdownRegistered = false;
 
-    public function __construct(GcpLogger $gcpLogger, $level = Level::Debug, bool $bubble = true)
+    protected ?Redactor $redactor;
+
+    public function __construct(GcpLogger $gcpLogger, $level = Level::Debug, bool $bubble = true, ?Redactor $redactor = null)
     {
         parent::__construct($level, $bubble);
         $this->gcpLogger = $gcpLogger;
+        $this->redactor = $redactor;
     }
 
     protected function getDefaultFormatter(): FormatterInterface
@@ -45,7 +49,9 @@ class GoogleLoggingHandler extends AbstractProcessingHandler
     {
         $formatted = $this->getFormatter()->format($record);
         $data = is_string($formatted) ? ['message' => $formatted] : $formatted;
-        $data = $this->truncateIfNeeded($this->sanitize($data));
+        $data = $this->sanitize($data);
+        $data = $this->redactor?->redact($data) ?? $data;
+        $data = $this->truncateIfNeeded($data);
 
         $this->buffer[] = $this->gcpLogger->entry($data, [
             'timestamp' => $record->datetime,

@@ -3,6 +3,7 @@
 namespace Lhduc\LaravelGcpLogging\Logging;
 
 use Google\Cloud\Logging\LoggingClient;
+use Lhduc\LaravelGcpLogging\Support\Redactor;
 use Monolog\Handler\NullHandler;
 use Monolog\Logger;
 
@@ -29,7 +30,10 @@ class GoogleLogger
 
         $logging = new LoggingClient($options);
         $gcpLogger = $logging->logger($logName);
-        $handler = new GoogleLoggingHandler($gcpLogger);
+        $handler = new GoogleLoggingHandler(
+            $gcpLogger,
+            redactor: new Redactor((array) ($config['redact_keys'] ?? []))
+        );
         $handler->setFormatter(new GoogleJsonFormatter());
 
         $logger->pushHandler($handler);

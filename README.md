@@ -40,3 +40,12 @@ Update `config/logging.php`:
 `excluded_routes` entries match the route URI exactly and also accept `*` wildcards (e.g. `api/health*`).
 
 Requests hitting the `api` middleware group automatically receive the correlation middleware. Queue jobs and outbound HTTP client calls will include the correlation identifier and emit structured entries in Google Cloud Logging.
+
+### Redaction
+
+Sensitive values are replaced with `[REDACTED]` before an entry leaves the app: request/response headers and bodies, HTTP client calls, queue payloads, log context and URLs. The default `redact_keys` (see `config/google-logging.php`) cover `authorization`, `cookie`, `password`, `token`, `otp`, `pin`, `secret`, `signature`, `api_key`, `private_key`, `credential`, `card_number`, `cvv`, `cvc`.
+
+- A key matches by **word**: `password` also masks `user_password`, `newPassword`, `passwords`; `pin` does not mask `shipping`.
+- JSON text, PHP-serialized text and `?token=...` query strings inside string values are masked too (e.g. truncated bodies and queue payloads).
+- Add your own keys in `redact_keys`; set it to `[]` to disable redaction.
+

@@ -4,6 +4,7 @@ namespace Lhduc\LaravelGcpLogging\Tests;
 
 use Lhduc\LaravelGcpLogging\Logging\GoogleJsonFormatter;
 use Lhduc\LaravelGcpLogging\Logging\GoogleLoggingHandler;
+use Lhduc\LaravelGcpLogging\Support\Redactor;
 use Monolog\Logger;
 
 class GoogleLoggingHandlerTest extends TestCase
@@ -19,7 +20,7 @@ class GoogleLoggingHandlerTest extends TestCase
         parent::setUp();
 
         $this->gcp = new FakeGcpLogger();
-        $this->handler = (new GoogleLoggingHandler($this->gcp))->setFormatter(new GoogleJsonFormatter());
+        $this->handler = (new GoogleLoggingHandler($this->gcp, redactor: new Redactor(config('google-logging.redact_keys'))))->setFormatter(new GoogleJsonFormatter());
         $this->logger = new Logger('test', [$this->handler]);
     }
 
@@ -73,5 +74,37 @@ class GoogleLoggingHandlerTest extends TestCase
         $data = $this->gcp->sent()[0]['data'];
         $this->assertTrue($data['_truncated']);
         $this->assertLessThanOrEqual(204_800, strlen(json_encode($data)));
+    }
+
+    public function test_sensitive_data_never_reaches_gcp(): void
+    {
+        $this->logger->info('[cid] 200 GET http://x.test/cb?token=urltoken', [
+            'tag' => 'Request',
+            'url' => 'http://x.test/cb?api_key=urlkey&page=2',
+            'request_headers' => ['authorization' => ['Bearer headersecret'], 'cookie' => ['s=cookiesecret'], 'accept' => ['*/*']],
+            'request_body' => ['email' => 'a@b.c', 'password' => 'pw-secret', 'otp' => '123456'],
+            'response' => '{"access_token":"respsecret","ok":true}',
+            'payload' => '{"data":{"command":"O:3:\\"Job\\":1:{s:8:\\"password\\";s:6:\\"jobsec\\";}"}}',
+        ]);
+        $this->handler->flush();
+
+        $sent = json_encode($this->gcp->sent()[0]['data']);
+        foreach (['urltoken', 'urlkey', 'headersecret', 'cookiesecret', 'pw-secret', '123456', 'respsecret', 'jobsec'] as $secret) {
+            $this->assertStringNotContainsString($secret, $sent, $secret);
+        }
+
+        $data = $this->gcp->sent()[0]['data'];
+        $this->assertSame('a@b.c', $data['context']['request_body']['email']);
+        $this->assertSame(['*/*'], $data['context']['request_headers']['accept']);
+        $this->assertStringContainsString('page=2', $data['context']['url']);
+    }
+
+    public function test_default_config_redacts_the_common_keys(): void
+    {
+        $keys = config('google-logging.redact_keys');
+
+        foreach (['authorization', 'cookie', 'password', 'token', 'otp', 'pin', 'secret', 'signature'] as $key) {
+            $this->assertContains($key, $keys);
+        }
     }
 }
