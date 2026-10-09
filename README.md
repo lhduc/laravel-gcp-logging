@@ -37,4 +37,6 @@ Update `config/logging.php`:
 ],
 ```
 
+`excluded_routes` entries match the route URI exactly and also accept `*` wildcards (e.g. `api/health*`).
+
 Requests hitting the `api` middleware group automatically receive the correlation middleware. Queue jobs and outbound HTTP client calls will include the correlation identifier and emit structured entries in Google Cloud Logging.

@@ -10,8 +10,12 @@
     },
     "require": {
         "php": "^8.2",
+        "ext-json": "*",
+        "ext-mbstring": "*",
         "google/cloud-logging": "^1.32",
-        "laravel/framework": "^12"
+        "guzzlehttp/guzzle": "^7.0",
+        "laravel/framework": "^12",
+        "monolog/monolog": "^3.0"
     },
     "extra": {
         "laravel": {
@@ -19,5 +23,20 @@
                 "Lhduc\\LaravelGcpLogging\\Providers\\GoogleLoggingServiceProvider"
             ]
         }
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Lhduc\\LaravelGcpLogging\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "sort-packages": true
     }
 }
