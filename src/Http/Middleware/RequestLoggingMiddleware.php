@@ -51,7 +51,7 @@ class RequestLoggingMiddleware
         try {
             $response = $next($request);
             $status = $response->getStatusCode();
-            $responseData = $response->getContent();
+            $responseData = $this->limitText((string) $response->getContent());
             $duration = (microtime(true) - $start) * 1000;
 
             return $response;
@@ -68,7 +68,7 @@ class RequestLoggingMiddleware
                 'url' => $request->fullUrl(),
                 'status' => $status,
                 'request_headers' => $request->headers->all(),
-                'request_body' => $request->all(),
+                'request_body' => $this->limitPayload($request->all()),
                 'response' => $this->parseJsonBody($responseData),
                 'error' => $exceptionMessage,
                 'duration' => $duration,
