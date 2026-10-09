@@ -34,7 +34,8 @@ class RequestLoggingMiddleware
             $excludedRoutes = array_filter(array_map('trim', explode(',', $excludedRoutes)));
         }
 
-        if ($routeUri && in_array($routeUri, $excludedRoutes, true)) {
+        // Str::is keeps exact matches working and adds `*` wildcards (e.g. `api/health*`).
+        if ($routeUri && Str::is($excludedRoutes, $routeUri)) {
             return $next($request);
         }
 
