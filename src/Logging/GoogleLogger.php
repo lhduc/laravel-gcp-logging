@@ -5,6 +5,7 @@ namespace Lhduc\LaravelGcpLogging\Logging;
 use Google\Cloud\Logging\LoggingClient;
 use Lhduc\LaravelGcpLogging\Support\Redactor;
 use Monolog\Handler\NullHandler;
+use Monolog\Level;
 use Monolog\Logger;
 
 class GoogleLogger
@@ -32,6 +33,7 @@ class GoogleLogger
         $gcpLogger = $logging->logger($logName);
         $handler = new GoogleLoggingHandler(
             $gcpLogger,
+            level: $this->resolveLevel($config['level'] ?? null),
             redactor: new Redactor((array) ($config['redact_keys'] ?? []))
         );
         $handler->setFormatter(new GoogleJsonFormatter());
@@ -39,5 +41,17 @@ class GoogleLogger
         $logger->pushHandler($handler);
 
         return $logger;
+    }
+
+    /**
+     * Honor the channel's `level` (e.g. LOG_LEVEL=info); fall back to debug when missing/invalid.
+     */
+    private function resolveLevel(mixed $level): Level
+    {
+        try {
+            return $level === null || $level === '' ? Level::Debug : Logger::toMonologLevel($level);
+        } catch (\Throwable $e) {
+            return Level::Debug;
+        }
     }
 }

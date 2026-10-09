@@ -14,6 +14,7 @@ class RequestLoggingMiddlewareTest extends TestCase
             Route::get('api/health/deep', fn () => 'ok');
             Route::get('api/big', fn () => response(str_repeat('é', 40_000)));
             Route::post('api/upload', fn () => ['ok' => true]);
+            Route::get('api/boom', fn () => throw new \RuntimeException('kaboom'));
             Route::get('api/fail', fn () => response(['error' => 'x'], 422));
         });
 
@@ -88,5 +89,15 @@ class RequestLoggingMiddlewareTest extends TestCase
         $this->assertIsString($records[0]->context['request_body']);
         $this->assertStringEndsWith(' [TRUNCATED]', $records[0]->context['request_body']);
         $this->assertSame(['note' => 'short'], $records[1]->context['request_body']);
+    }
+
+    public function test_unhandled_exception_is_recorded_on_the_request_log(): void
+    {
+        $this->getJson('api/boom')->assertStatus(500);
+
+        $record = $this->googleRecords()[0];
+        $this->assertSame('ERROR', $record->level->getName());
+        $this->assertSame('kaboom', $record->context['error']);
+        $this->assertInstanceOf(\RuntimeException::class, $record->context['exception']);
     }
 }

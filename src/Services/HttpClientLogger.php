@@ -23,6 +23,8 @@ class HttpClientLogger
             $response = $stats->getResponse();
 
             if (!$response) {
+                $this->logFailure($correlationId, $request, $stats);
+
                 return;
             }
 
@@ -47,6 +49,41 @@ class HttpClientLogger
         } catch (\Throwable $e) {
             // swallow exceptions; logging should not break requests
         }
+    }
+
+    /**
+     * Connection errors, DNS failures and timeouts never produce a response,
+     * but they are exactly the calls that need to be visible.
+     */
+    private function logFailure(string $correlationId, RequestInterface $request, TransferStats $stats): void
+    {
+        $url = (string) $request->getUri();
+        $method = $request->getMethod();
+
+        $this->logByStatus(500, "[$correlationId] FAILED $method $url", [
+            'correlation_id' => $correlationId,
+            'tag' => 'HttpClient',
+            'method' => $method,
+            'url' => $url,
+            'status' => null,
+            'request_headers' => $this->formatHeaders($request),
+            'request_body' => $this->parseJsonBody($this->readBody($request->getBody())),
+            'error' => $this->describeError($stats->getHandlerErrorData()),
+            'transfer_time' => $stats->getTransferTime(),
+        ]);
+    }
+
+    private function describeError(mixed $error): string
+    {
+        if ($error instanceof \Throwable) {
+            return $error->getMessage();
+        }
+
+        if (is_scalar($error)) {
+            return (string) $error;
+        }
+
+        return $error === null ? 'no response' : (string) json_encode($error, JSON_PARTIAL_OUTPUT_ON_ERROR);
     }
 
     private function formatHeaders(RequestInterface $request): array
