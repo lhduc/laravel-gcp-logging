@@ -8,6 +8,8 @@ Reusable package that wires a Google Cloud Logging channel into Laravel, adds co
 composer require lhduc/laravel-gcp-logging
 ```
 
+Requires PHP 8.2+ and Laravel 12 or 13.
+
 ### Publish configuration
 
 ```bash
