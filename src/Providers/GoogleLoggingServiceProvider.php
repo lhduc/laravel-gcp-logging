@@ -14,6 +14,7 @@ use Lhduc\LaravelGcpLogging\Http\Middleware\RequestLoggingMiddleware;
 use Lhduc\LaravelGcpLogging\Logging\GoogleLogger;
 use Lhduc\LaravelGcpLogging\Logging\GoogleLoggingHandler;
 use Lhduc\LaravelGcpLogging\Services\HttpClientLogger;
+use Lhduc\LaravelGcpLogging\Support\Redactor;
 
 class GoogleLoggingServiceProvider extends ServiceProvider
 {
@@ -118,7 +119,7 @@ class GoogleLoggingServiceProvider extends ServiceProvider
                 $cid = $payload['correlation_id'] ?? ($payload['uuid'] ?? '');
                 $message = "[$cid] SUCCESS {$event->job->resolveName()}";
 
-                logger()->channel('google')->info($message, [
+                logger()->channel('google')->info($message, $this->redact([
                     'correlation_id' => $cid,
                     'tag' => 'Job',
                     'status' => 'success',
@@ -126,7 +127,7 @@ class GoogleLoggingServiceProvider extends ServiceProvider
                     'queue' => $event->job->getQueue(),
                     'connection' => $event->connectionName,
                     'payload' => $event->job->getRawBody(),
-                ]);
+                ]));
             } catch (\Throwable $e) {
                 // Logging must never break job processing.
             }
@@ -140,7 +141,7 @@ class GoogleLoggingServiceProvider extends ServiceProvider
                 $cid = $payload['correlation_id'] ?? ($payload['uuid'] ?? '');
                 $message = "[$cid] FAILED {$event->job->resolveName()}";
 
-                logger()->channel('google')->error($message, [
+                logger()->channel('google')->error($message, $this->redact([
                     'correlation_id' => $cid,
                     'tag' => 'Job',
                     'status' => 'failed',
@@ -150,7 +151,7 @@ class GoogleLoggingServiceProvider extends ServiceProvider
                     'payload' => $event->job->getRawBody(),
                     'error' => $event->exception->getMessage(),
                     'exception' => $event->exception,
-                ]);
+                ]));
             } catch (\Throwable $e) {
                 // Logging must never break job processing.
             }
@@ -169,6 +170,15 @@ class GoogleLoggingServiceProvider extends ServiceProvider
 
         // String class name: Octane is optional, listening on a missing class is harmless.
         Event::listen('Laravel\\Octane\\Events\\RequestTerminated', fn () => $this->flushLogs());
+    }
+
+    /**
+     * Redact before the log call: MessageLogged listeners (e.g. Telescope) receive the raw context,
+     * GoogleLoggingHandler's own redaction runs too late for them.
+     */
+    private function redact(array $context): array
+    {
+        return Redactor::forChannel('google')->redact($context);
     }
 
     private function flushLogs(): void

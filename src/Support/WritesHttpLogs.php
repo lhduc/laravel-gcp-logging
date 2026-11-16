@@ -39,9 +39,15 @@ trait WritesHttpLogs
     /**
      * Log on the `google` channel with a severity derived from the HTTP status.
      * Statuses outside 2xx/4xx/5xx are not logged.
+     *
+     * The context is redacted here, before the log call, and not only in GoogleLoggingHandler:
+     * Laravel fires MessageLogged with the context exactly as passed, and listeners such as
+     * Telescope's ExceptionWatcher store it as-is (raw Authorization headers, passwords).
+     * Non-array values such as the `exception` object pass through unchanged.
      */
     private function logByStatus(int $status, string $message, array $data): void
     {
+        $data = Redactor::forChannel('google')->redact($data);
         $logger = logger()->channel('google');
 
         if ($status >= 200 && $status < 300) {

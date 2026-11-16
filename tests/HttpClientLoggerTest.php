@@ -5,6 +5,8 @@ namespace Lhduc\LaravelGcpLogging\Tests;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\TransferStats;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Lhduc\LaravelGcpLogging\Services\HttpClientLogger;
 
@@ -101,5 +103,27 @@ class HttpClientLoggerTest extends TestCase
         (new HttpClientLogger())->logRequest(new TransferStats(new Request('GET', 'http://example.test/x'), null, 0.1, 'boom'));
 
         $this->assertCount(0, $this->googleRecords());
+    }
+
+    public function test_log_event_listeners_receive_redacted_context(): void
+    {
+        $seen = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$seen) {
+            $seen[] = $event->context;
+        });
+        app()->instance('correlation_id', 'cid-12');
+
+        $stats = new TransferStats(
+            new Request('POST', 'http://example.test/x?api_key=k3y', ['Authorization' => 'Bearer s3cret'], '{"password":"hunter2","a":1}'),
+            new Response(200, [], '{"access_token":"t0k","ok":true}'),
+            0.1
+        );
+        (new HttpClientLogger())->logRequest($stats);
+
+        $context = $seen[0];
+        $this->assertSame('[REDACTED]', $context['request_headers']['Authorization']);
+        $this->assertSame(['password' => '[REDACTED]', 'a' => 1], $context['request_body']);
+        $this->assertSame(['access_token' => '[REDACTED]', 'ok' => true], $context['response_body']);
+        $this->assertStringContainsString('api_key=[REDACTED]', $context['url']);
     }
 }

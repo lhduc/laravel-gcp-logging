@@ -25,6 +25,25 @@ class Redactor
 
     private ?string $prefilter = null;
 
+    /** @var array<string, self> */
+    private static array $instances = [];
+
+    /**
+     * Redactor using the same keys as the channel: package config overlaid by the channel's
+     * own config (the merge GoogleLogger does). Instances are reused per key set.
+     */
+    public static function forChannel(string $channel = 'google'): self
+    {
+        $config = array_merge(
+            (array) config('google-logging', []),
+            (array) config("logging.channels.$channel", [])
+        );
+        $keys = array_values((array) ($config['redact_keys'] ?? []));
+        $cacheKey = json_encode($keys) ?: '';
+
+        return self::$instances[$cacheKey] ??= new self($keys);
+    }
+
     /**
      * @param  string[]  $keys
      */
