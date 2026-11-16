@@ -50,4 +50,5 @@ Sensitive values are replaced with `[REDACTED]` before an entry leaves the app: 
 - A key matches by **word**: `password` also masks `user_password`, `newPassword`, `passwords`; `pin` does not mask `shipping`.
 - JSON text, PHP-serialized text and `?token=...` query strings inside string values are masked too (e.g. truncated bodies and queue payloads).
 - Add your own keys in `redact_keys`; set it to `[]` to disable redaction.
+- The request, HTTP client and queue entries this package writes are redacted **before** the log call, so `MessageLogged` listeners (e.g. Laravel Telescope, which stores the context of any log call that carries an `exception`) never see the raw values. Context you pass yourself to `Log::channel('google')` is redacted by the channel handler only, so listeners still receive it as passed.
 

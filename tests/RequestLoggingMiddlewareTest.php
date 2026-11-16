@@ -2,6 +2,8 @@
 
 namespace Lhduc\LaravelGcpLogging\Tests;
 
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 
 class RequestLoggingMiddlewareTest extends TestCase
@@ -16,6 +18,7 @@ class RequestLoggingMiddlewareTest extends TestCase
             Route::post('api/upload', fn () => ['ok' => true]);
             Route::get('api/boom', fn () => throw new \RuntimeException('kaboom'));
             Route::get('api/fail', fn () => response(['error' => 'x'], 422));
+            Route::post('api/login', fn () => throw new \DomainException('rejected'));
         });
 
         Route::get('web/page', fn () => 'ok');
@@ -99,5 +102,32 @@ class RequestLoggingMiddlewareTest extends TestCase
         $this->assertSame('ERROR', $record->level->getName());
         $this->assertSame('kaboom', $record->context['error']);
         $this->assertInstanceOf(\RuntimeException::class, $record->context['exception']);
+    }
+
+    public function test_log_event_listeners_receive_redacted_context(): void
+    {
+        // Laravel fires MessageLogged with the context passed to the log call, before any handler
+        // runs. Telescope's ExceptionWatcher stores that context, so it must already be redacted.
+        $seen = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$seen) {
+            $seen[] = $event->context;
+        });
+
+        $this->postJson('api/login?token=t0ken-in-url', ['email' => 'a@b.test', 'password' => 'hunter2'], [
+            'Authorization' => 'Bearer s3cret-bearer',
+        ])->assertStatus(500);
+
+        $context = collect($seen)->firstWhere('tag', 'Request');
+        $this->assertNotNull($context);
+        $this->assertSame('[REDACTED]', $context['request_headers']['authorization']);
+        $this->assertSame('[REDACTED]', $context['request_body']['password']);
+        $this->assertSame('a@b.test', $context['request_body']['email']);
+        $this->assertStringContainsString('token=[REDACTED]', $context['url']);
+        $this->assertInstanceOf(\DomainException::class, $context['exception']);
+
+        $dump = json_encode(array_diff_key($context, ['exception' => true]));
+        $this->assertStringNotContainsString('s3cret-bearer', $dump);
+        $this->assertStringNotContainsString('hunter2', $dump);
+        $this->assertStringNotContainsString('t0ken-in-url', $dump);
     }
 }

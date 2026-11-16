@@ -6,18 +6,19 @@ use Illuminate\Contracts\Queue\Job;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 
 class QueueLoggingTest extends TestCase
 {
-    private function job(?string $correlationId): Job
+    private function job(?string $correlationId, string $rawBody = '{}'): Job
     {
         $job = \Mockery::mock(Job::class);
         $job->shouldReceive('payload')->andReturn(['correlation_id' => $correlationId, 'uuid' => 'u-1']);
         $job->shouldReceive('resolveName')->andReturn('App\\Jobs\\Demo');
         $job->shouldReceive('getQueue')->andReturn('default');
-        $job->shouldReceive('getRawBody')->andReturn('{}');
+        $job->shouldReceive('getRawBody')->andReturn($rawBody);
 
         return $job;
     }
@@ -71,5 +72,26 @@ class QueueLoggingTest extends TestCase
         Event::dispatch(new JobProcessed('sync', $this->job('cid-9')));
 
         $this->assertTrue(true);
+    }
+
+    public function test_log_event_listeners_receive_a_redacted_job_payload(): void
+    {
+        $seen = [];
+        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$seen) {
+            $seen[] = $event->context;
+        });
+
+        $raw = '{"uuid":"u-1","data":{"command":"O:8:\\"App\\\\Demo\\":1:{s:8:\\"password\\";s:7:\\"hunter2\\";}","api_token":"tok-123"}}';
+        Event::dispatch(new JobProcessed('sync', $this->job('cid-10', $raw)));
+        Event::dispatch(new JobFailed('sync', $this->job('cid-11', $raw), new \RuntimeException('nope')));
+
+        $contexts = array_values(array_filter($seen, fn ($c) => ($c['tag'] ?? null) === 'Job'));
+        $this->assertCount(2, $contexts);
+        foreach ($contexts as $context) {
+            $this->assertStringNotContainsString('hunter2', $context['payload']);
+            $this->assertStringNotContainsString('tok-123', $context['payload']);
+            $this->assertStringContainsString('[REDACTED]', $context['payload']);
+        }
+        $this->assertInstanceOf(\RuntimeException::class, $contexts[1]['exception']);
     }
 }
